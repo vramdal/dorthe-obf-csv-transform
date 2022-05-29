@@ -1,9 +1,9 @@
 import React, { MouseEventHandler, useEffect, useState } from 'react';
 import './App.css';
 import Papa, { ParseResult } from 'papaparse';
-import streamSaver from 'streamsaver';
 // @ts-ignore
 import replaceAllInserter from 'string.prototype.replaceall';
+import { downloadCsv } from "./download";
 
 replaceAllInserter.shim();
 
@@ -144,7 +144,7 @@ function App() {
   const [unparsed, setUnparsed] = useState<string>("");
 
   const unparse = (parseResult: ParseResult<Dictionary>) => {
-    return Papa.unparse(parseResult.data, {delimiter: ";", header: true, quotes: false});
+    return Papa.unparse(parseResult.data, {delimiter: ";", header: true, quotes: false, newline: "\r\n"});
   }
 
   useEffect(() => {
@@ -179,21 +179,12 @@ function App() {
           func={unparse}
           renderer={(parseResult: ParseResult<Dictionary>) => <SpreadsheetPreview input={parseResult}/>}
         />
+{/*
         <Step<string, void> input={unparsed} title={"Last ned behandlet CSV-fil"}
-                            func={(contents) => {
-                              const encoded = new TextEncoder().encode(contents);
-
-                              const fileStream = streamSaver.createWriteStream("output.json", {
-                                size: encoded.byteLength,
-                                writableStrategy: undefined,
-                                readableStrategy: undefined
-                              });
-                              const writer = fileStream.getWriter();
-                              writer.write(encoded);
-                              writer.close();
-                            }} setResult={() => undefined}/>
+                            func={downloadCsv} setResult={() => undefined}/>
+*/}
       </div>
-
+      <button type={"button"} onClick={() => downloadCsv(unparsed)} title={"Last ned behandlet CSV-fil"}>Last ned behandlet CSV-fil</button>
     </div>
   );
 }
