@@ -29,27 +29,18 @@ test('renders learn react link', async () => {
   const importFileRegion = screen.getByTestId("region-Importer fil");
 
   const fileChooser = within(importFileRegion).getByTestId("input-file-chooser");
-  const importFileButton = within(importFileRegion).getByRole("button", {name: "Importer fil"});
   userEvent.upload(fileChooser, file);
-  fireEvent.click(importFileButton);
 
   await waitFor(() => {
-    expect(within(screen.getByTestId("region-Fjern første linje")).getByRole("textbox")).toHaveValue(inputFileContents.trim());
+    expect(within(screen.getByTestId("region-Importer fil")).getByRole("textbox")).toHaveTextContent(/.+/);
   })
 
-  const removeFirstLineButton = screen.getByRole("button", {name: "Fjern første linje"});
-  fireEvent.click(removeFirstLineButton);
+  await waitFor(() => {
+    expect(within(screen.getByTestId("region-resultat-csv")).getByRole("textbox")).toHaveTextContent(/.+/);
 
-  const removeDecimalsButton = screen.getByRole("button", {name: "Fjern alle ,00"});
-  fireEvent.click(removeDecimalsButton);
+  })
 
-  const roundAmountsButton = screen.getByRole("button", {name: "Endre 112,50 til 112 og 262,50 til 262"});
-  fireEvent.click(roundAmountsButton);
-
-  const previewCsvButton = screen.getByRole("button", {name: "Forhåndsvis CSV-fil"});
-  fireEvent.click(previewCsvButton);
-
-  const downloadButton = screen.getByRole("button", {name: "Last ned behandlet CSV-fil"});
+  const downloadButton = screen.getByRole("button", {name: "Last ned resultat-CSV"});
   fireEvent.click(downloadButton);
 
   await waitFor(() => {

@@ -1,6 +1,6 @@
-import React, { MouseEventHandler, useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
-import Papa, { ParseResult } from 'papaparse';
+import Papa, { ParseResult, ParseStepResult } from 'papaparse';
 // @ts-ignore
 import replaceAllInserter from 'string.prototype.replaceall';
 import { downloadCsv } from "./download";
@@ -8,83 +8,59 @@ import { downloadCsv } from "./download";
 replaceAllInserter.shim();
 
 type PreviewProps = {
-  value: string,
-  onChange: (value: string) => void
+  value: string
 }
-const InputPreview = (props: PreviewProps) => {
+const RawPreview = (props: PreviewProps) => {
 
-  return <div>CSV:<br/>
-    <textarea className={"step-result-view"} rows={20} cols={60} value={props.value} readOnly={true}
-    />;
-  </div>
+  return <textarea className={"step-result-view"} rows={20} cols={60} value={props.value} readOnly={true}/>
 }
 
 type Dictionary = { [index: string]: any };
 
-const SpreadsheetPreview = (props: { input: ParseResult<Dictionary> }) => {
+const SpreadsheetPreview = (props: { input: ParseResultWithProgress}) => {
 
   const parseResult = (props.input);
+
+  console.log("Rendrer: " + parseResult.rowsProcessed + " rader, complete: " + parseResult.complete);
 
   if (parseResult.errors.length > 0) {
     return <div>
       {parseResult.errors.map((error, idx) => <div key={idx}>{JSON.stringify(error)}</div>)}
     </div>
   }
+
   return <div className={"spreadsheet-wrapper"}>
-    <table>
-      <thead>
-      <tr>
-        {parseResult.meta.fields?.map(field => <th key={field}>{field}</th>)}
-      </tr>
-      </thead>
-      <tbody>
-      {parseResult.data.map((row: Dictionary, idx: number) => <tr key={idx}>
-        {parseResult.meta.fields?.map(field => {
-          const colValue = row.hasOwnProperty(field) && row[field];
-          return <td key={field}>{colValue}</td>;
-        })}
-      </tr>)
-      }
-      </tbody>
-    </table>
+    {props.input.complete ?
+      <table>
+        <thead>
+        <tr>
+          {parseResult.meta.fields?.map(field => <th key={field}>{field}</th>)}
+        </tr>
+        </thead>
+        <tbody>
+        {parseResult.data.map((row: Dictionary, idx: number) => <tr key={idx}>
+          {parseResult.meta.fields?.map(field => {
+            const colValue = row.hasOwnProperty(field) && row[field];
+            return <td key={field}>{colValue}</td>;
+          })}
+        </tr>)
+        }
+        </tbody>
+      </table> : <div>Vennligst vent ...</div>}
   </div>
 
 }
 
-type StepProps<Input extends object | string | void, Output> = {
-  input: Input;
-  title: string;
-  func: (input: Input) => Output | Promise<Output>;
-  setResult: (result: Output) => void;
-  renderer?: (input: Input) => React.ReactNode
-}
+type Transformer = ((input: string) => string);
 
-function Step<Input extends object | string | void, Output>(props: StepProps<Input, Output>) {
 
-  const clickHandler: MouseEventHandler = () => {
-    const result: Promise<Output> | Output = props.func((props.input)!);
-    // setValue(result);
-    if (result instanceof Promise) {
-      result.then(resolved => props.setResult(resolved))
-    } else {
-      props.setResult(result);
-    }
-  }
-
-  const renderer: (input: Input) => React.ReactNode = props.renderer || ((input: Input) =>
-    <div><InputPreview value={input && input.toString()} onChange={() => undefined}/></div>)
-
-  return (<fieldset data-testid={`region-${props.title}`}>
-    {renderer(props.input)}
-    <button type={"button"} onClick={clickHandler}>{props.title}</button>
-  </fieldset>);
-}
-
+type ParseResultWithProgress =
+  ParseResult<Dictionary>
+  & { complete: boolean, rowsProcessed: number, unparsed?: string };
 
 function App() {
 
-
-  const [input1, setInput1] = useState<string>("");
+  const [inputCsv, setInputCsv] = useState<string>("");
 
   const doImport: () => Promise<string> = () => {
     return new Promise<string>((resolve, reject) => {
@@ -97,7 +73,6 @@ function App() {
         console.log("Ferdig med å lese input-fil")
         const text: string = fileReader.result as string;
         return resolve(text.trim());
-        // setInput1(text.trim());
       });
       fileReader.onerror = (error => {
         return reject(error);
@@ -105,22 +80,16 @@ function App() {
     })
   }
 
-  const [input2, setInput2] = useState<string>("");
-
   const removeHeader = (input: string) => {
     const lines = input.split("\n");
     const [, ...rowsWithoutHeader] = lines;
     return rowsWithoutHeader.join("\n");
   }
 
-  const [input3, setInput3] = useState<string>("");
-
   const removeDecimals = (input: string) => {
     const lines = input.split("\n");
     return lines.map(line => line.replaceAll(",00", "")).join("\n");
   }
-
-  const [input4, setInput4] = useState<string>("");
 
   const replaceAmounts = (input: string) => {
     const lines = input.split("\n");
@@ -128,7 +97,7 @@ function App() {
   }
 
 
-  const [parseResult, setParseResult] = useState<ParseResult<Dictionary>>({data: [],
+  const [parseResult, setParseResult] = useState<ParseResultWithProgress>({data: [],
     meta: {
       delimiter: ",",
       fields: [],
@@ -137,54 +106,171 @@ function App() {
       linebreak: "\n",
       truncated: false
     },
-    errors: []
+    errors: [],
+    rowsProcessed: 0,
+    complete: true
   });
-  const parseCsv = (csv: string) => Papa.parse<Dictionary>(csv, {header: true, delimiter: ","})
-
-  const [unparsed, setUnparsed] = useState<string>("");
 
   const unparse = (parseResult: ParseResult<Dictionary>) => {
     return Papa.unparse(parseResult.data, {delimiter: ";", header: true, quotes: false, newline: "\r\n"});
   }
 
+  const operationDefinitions : Array<{
+    id: string,
+    title: string,
+    func: Transformer
+  }> = useMemo(() => {
+
+    return [
+      {
+        id: "remove-first-line",
+        title: "Fjern første linje",
+        func: removeHeader,
+      }, {
+        id: "fjern-alle-00-step",
+        title: "Fjern alle ,00",
+        func: removeDecimals,
+      }, {
+        id: "endre-desimaler-step",
+        title: "Endre 112,50 til 112 og 262,50 til 262",
+        func: replaceAmounts,
+      }
+    ];
+  }, []);
+
+  const [operationSelections, setOperationSelections] = useState<Array<{ id: string, selected: boolean }>>(operationDefinitions.map(op => ({id: op.id, selected: true})));
+
+  const selectOperation = (operationId: string, selected: boolean) => {
+    console.log("Selecting operation " + operationId + " " + selected)
+    operationSelections.forEach(operation => {
+      if (operation.id === operationId) {
+        operation.selected = selected;
+      }});
+    console.log('operationSelections = ', operationSelections);
+    setOperationSelections([...operationSelections]);
+  }
+
+
+  const [preParsed, setPreParsed] = useState<string>("");
+
   useEffect(() => {
-    const parseResult = parseCsv(input4 || input3 || input2);
-    setParseResult(parseResult);
-  }, [input2, input3, input4])
+    window.setTimeout(() => {
+      console.log("Filtrerer linjer");
+      const selectedOperationIds = operationSelections.filter(operationSelection => operationSelection.selected).map(operationSelection => operationSelection.id);
 
-  const steps = [
-    <Step<void, string> key={"importer-fil-step"} input={undefined} title={"Importer fil"} func={doImport}
-                                             setResult={setInput1} renderer={() =>
-    <input type={"file"} name={"inputFile"} data-testid={"input-file-chooser"} accept={"text/csv-schema,.csv"}/>}
-  />,
+      const operationsToPerform = operationDefinitions.filter(operationDefinition => selectedOperationIds.includes(operationDefinition.id)).map(operationDefinitions => operationDefinitions.func);
 
-    <Step<string, string> key="fjern-første-linje-step" input={input1} title={"Fjern første linje"} func={removeHeader}
-                          setResult={setInput2}/>,
-    <Step<string, string> key={"fjern-alle-00-step"} input={input2} title={"Fjern alle ,00"} func={removeDecimals}
-                          setResult={setInput3}/>,
-    <Step<string, string> key={"endre-desimaler-step"} input={input3} title={"Endre 112,50 til 112 og 262,50 til 262"}
-                          func={replaceAmounts} setResult={setInput4}/>
-  ];
+      let result = inputCsv;
+      for (const operation of operationsToPerform) {
+        result = operation(result);
+      }
+
+      setPreParsed(_ => result);
+      console.log("Ferdig med å filtrere linjer");
+    })
+  }, [inputCsv, operationDefinitions, operationSelections])
+
+  useEffect(() => {
+    const parseCsv = (csv: string) => {
+      let tempParseResult : ParseResultWithProgress = {
+          errors: [],
+          meta: {
+            delimiter: "",
+            fields: [],
+            aborted: false,
+            cursor: 0,
+            truncated: false,
+            linebreak: ""
+          },
+          data: [],
+          complete: false,
+          rowsProcessed: 0,
+        }
+      ;
+      setParseResult(tempParseResult);
+      window.setTimeout(() => {
+        Papa.parse<Dictionary>(csv, {
+          header: true,
+          delimiter: ",",
+          complete(_: ParseResult<Dictionary>) {
+            console.log("Complete");
+            // window.setTimeout(() => {
+            setParseResult(({...tempParseResult, complete: true, unparsed: unparse(tempParseResult)}));
+            // })
+          },
+          // worker: true,
+          step: (stepResult: ParseStepResult<Dictionary>) => {
+            const updatedParseResult = {...tempParseResult};
+            if (updatedParseResult.data.length === 0) {
+              updatedParseResult.meta = stepResult.meta
+            }
+            if (stepResult.errors.length > 0) {
+              updatedParseResult.errors.push(...stepResult.errors);
+            }
+            updatedParseResult.data.push(stepResult.data);
+            updatedParseResult.rowsProcessed += 1;
+            tempParseResult = updatedParseResult;
+            // console.log("Behandlet " + (updatedParseResult.data.length));
+            /*
+                    setParseResult(oldResult => {
+                      return ({
+                        meta: stepResult.meta,
+                        errors: [...oldResult.errors, ...stepResult.errors],
+                        data: [...oldResult.data, stepResult.data],
+                        complete: false,
+                        rowsProcessed: oldResult.data.length + 1
+                      });
+                    });
+            */
+          }
+        });
+      })
+    }
+    parseCsv(preParsed);
+  }, [preParsed])
+
+  let lipsumRows = [];
+  for (let i = 0; i < 300; i++) {
+    lipsumRows.push(<div key={i}>{i}: sei, torsk, hyse, gjedde</div>);
+  }
+
+
 
   return (
     <div className="App">
-      <form>
-        {steps}
-      </form>
-      <div className={"preview-wrapper"}>
-        <Step<ParseResult<Dictionary>, string>
-          title={"Forhåndsvis CSV-fil"}
-          setResult={setUnparsed}
-          input={parseResult}
-          func={unparse}
-          renderer={(parseResult: ParseResult<Dictionary>) => <SpreadsheetPreview input={parseResult}/>}
-        />
-{/*
-        <Step<string, void> input={unparsed} title={"Last ned behandlet CSV-fil"}
-                            func={downloadCsv} setResult={() => undefined}/>
-*/}
-      </div>
-      <button type={"button"} onClick={() => downloadCsv(unparsed)} title={"Last ned behandlet CSV-fil"}>Last ned behandlet CSV-fil</button>
+      <fieldset data-testid={"region-Importer fil"} className={"region-import"}>
+        <legend>Input-fil</legend>
+        <input type={"file"} name={"inputFile"} data-testid={"input-file-chooser"} accept={"text/csv-schema,.csv"} onChange={() => doImport().then(result => setInputCsv(result))}/>
+        <br/><br/>
+        <RawPreview value={inputCsv}/>
+      </fieldset>
+      <fieldset data-testid={"region-Operasjoner"}>
+        <legend>Operasjoner</legend>
+        <div className={"checkbox-set"}>
+          {
+            operationDefinitions.map(op => {
+              return {...op, selected: operationSelections.find(os => os.id === op.id)!.selected};
+            }).map(op => <label key={op.id} className={"operation-selector-label"} htmlFor={op.id}>
+              <input id={op.id} type={"checkbox"} name={`checkbox-${op.title}`} checked={op.selected} onChange={event => selectOperation(op.id, event.target.checked)}/> {op.title}
+            </label>)
+          }
+        </div>
+        <br/>
+      </fieldset>
+      <fieldset className={"flex-grows"}>
+        <legend>Forhåndsvisning</legend>
+        <SpreadsheetPreview input={parseResult} />
+      </fieldset>
+
+      <fieldset className={"flex-grows"} data-testid={"region-resultat-csv"}>
+        <legend>Resultat-CSV</legend>
+        {parseResult.unparsed && <RawPreview value={parseResult.unparsed}/>}
+      </fieldset>
+
+      <fieldset className={"region-download"}>
+        <button type={"button"} disabled={!parseResult.complete || parseResult.data.length === 0} onClick={() => downloadCsv(parseResult.unparsed!)} title={"Last ned resultat-CSV"}>Last ned resultat-CSV</button>
+        {parseResult.data.length > 0 && <div>{parseResult.data.length} rader</div>}
+      </fieldset>
     </div>
   );
 }
