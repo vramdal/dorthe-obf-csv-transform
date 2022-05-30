@@ -3,7 +3,7 @@ import streamSaver from "streamsaver";
 const downloadCsv = (csv: string) => {
     const encoded = new TextEncoder().encode(csv);
 
-    const fileStream = streamSaver.createWriteStream("output.json", {
+    const fileStream = streamSaver.createWriteStream("output.csv", {
         size: encoded.byteLength,
         writableStrategy: undefined,
         readableStrategy: undefined,
