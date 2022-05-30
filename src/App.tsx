@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { ChangeEvent, MouseEventHandler, useEffect, useMemo, useState } from 'react';
 import './App.css';
-import Papa, { ParseResult, ParseStepResult } from 'papaparse';
+import Papa, { ParseError, ParseResult, ParseStepResult } from 'papaparse';
 // @ts-ignore
 import replaceAllInserter from 'string.prototype.replaceall';
 import { downloadCsv } from "./download";
@@ -8,42 +8,46 @@ import { downloadCsv } from "./download";
 replaceAllInserter.shim();
 
 type PreviewProps = {
-  value: string
+  value: string,
+  setValue?: (value: string) => void
 }
 const RawPreview = (props: PreviewProps) => {
 
-  return <textarea className={"step-result-view"} rows={20} cols={60} value={props.value} readOnly={true}/>
+  const changeHandler = props.setValue && ((event: ChangeEvent<HTMLTextAreaElement>) => props.setValue!(event.target.value));
+  return <textarea className={"step-result-view"} rows={20} cols={60} value={props.value} readOnly={!props.setValue} disabled={!props.setValue} onChange={changeHandler}/>
 }
 
 type Dictionary = { [index: string]: any };
+type NumberedDictionary = {row: number} & Dictionary;
+type AnnotatedDictionary = NumberedDictionary & {error?: ParseError[]}
 
-const SpreadsheetPreview = (props: { input: ParseResultWithProgress}) => {
+const SpreadsheetPreview = (props: SpreadsheetData & ProgressType) => {
 
-  const parseResult = (props.input);
-
-  console.log("Rendrer: " + parseResult.rowsProcessed + " rader, complete: " + parseResult.complete);
-
-  if (parseResult.errors.length > 0) {
-    return <div>
-      {parseResult.errors.map((error, idx) => <div key={idx}>{JSON.stringify(error)}</div>)}
-    </div>
-  }
 
   return <div className={"spreadsheet-wrapper"}>
-    {props.input.complete ?
+    {props.complete ?
       <table>
         <thead>
         <tr>
-          {parseResult.meta.fields?.map(field => <th key={field}>{field}</th>)}
+          <th>Rad nr</th>
+          {props.fields?.map(field => <th key={field}>{field}</th>)}
         </tr>
         </thead>
         <tbody>
-        {parseResult.data.map((row: Dictionary, idx: number) => <tr key={idx}>
-          {parseResult.meta.fields?.map(field => {
-            const colValue = row.hasOwnProperty(field) && row[field];
-            return <td key={field}>{colValue}</td>;
-          })}
-        </tr>)
+        {props.data.map((rowData: AnnotatedDictionary, idx: number) => {
+          const onRowClick : MouseEventHandler | undefined = props.rowAttributes?.onClick && (() => {
+            console.log("Klikker på ", rowData);
+            props.rowAttributes?.onClick(rowData);
+          })
+          const rowNumberAttribute = {["data-"+props.rowIdPrefix+"-rownumber"]: rowData.row};
+          return <tr key={idx} id={(props.rowIdPrefix || "") + rowData.row} {...rowNumberAttribute} className={rowData.error && "highlighted-error"} data-error={JSON.stringify(rowData.error)}>
+            <td className={"row-number"}>{rowData.row}</td>
+            {props.fields?.map(field => {
+              const colValue = rowData.hasOwnProperty(field) && rowData[field];
+              return <td key={field} onClick={onRowClick}>{colValue}</td>;
+            })}
+          </tr>;
+        })
         }
         </tbody>
       </table> : <div>Vennligst vent ...</div>}
@@ -53,10 +57,17 @@ const SpreadsheetPreview = (props: { input: ParseResultWithProgress}) => {
 
 type Transformer = ((input: string) => string);
 
+type SpreadsheetData = {
+  data: Array<AnnotatedDictionary>,
+  fields: Array<string>,
+  rowIdPrefix?: string,
+  rowAttributes?: { onClick: (rowData: Dictionary) => void}
+}
 
+type ProgressType = { complete: boolean, rowsProcessed: number };
 type ParseResultWithProgress =
-  ParseResult<Dictionary>
-  & { complete: boolean, rowsProcessed: number, unparsed?: string };
+  ParseResult<AnnotatedDictionary>
+  & ProgressType & { unparsed?: string };
 
 function App() {
 
@@ -112,7 +123,10 @@ function App() {
   });
 
   const unparse = (parseResult: ParseResult<Dictionary>) => {
-    return Papa.unparse(parseResult.data, {delimiter: ";", header: true, quotes: false, newline: "\r\n"});
+    return Papa.unparse(parseResult.data.map(dataRow => {
+      const {error, row, ...realData} = dataRow;
+      return realData;
+    }), {delimiter: ";", header: true, quotes: false, newline: "\r\n"});
   }
 
   const operationDefinitions : Array<{
@@ -207,10 +221,9 @@ function App() {
             if (stepResult.errors.length > 0) {
               updatedParseResult.errors.push(...stepResult.errors);
             }
-            updatedParseResult.data.push(stepResult.data);
+            updatedParseResult.data.push({...stepResult.data, row: updatedParseResult.data.length, error: stepResult.errors.length > 0 ? stepResult.errors : undefined});
             updatedParseResult.rowsProcessed += 1;
             tempParseResult = updatedParseResult;
-            // console.log("Behandlet " + (updatedParseResult.data.length));
             /*
                     setParseResult(oldResult => {
                       return ({
@@ -235,6 +248,12 @@ function App() {
   }
 
 
+  const highlightOffendingRow = (rowNum: number) => {
+    document.querySelectorAll(".selected-error").forEach(row => row.classList.remove("selected-error"));
+    const trs = document.querySelectorAll<HTMLElement>(`*[data-data-rownumber='${rowNum}'].highlighted-error, *[data-error-rownumber='${rowNum}']`)!;
+    trs.forEach(tr => tr.classList.add("selected-error"));
+    trs.forEach(tr => tr.scrollIntoView({block: "center", behavior: "auto"}));
+  }
 
   return (
     <div className="App">
@@ -259,7 +278,14 @@ function App() {
       </fieldset>
       <fieldset className={"flex-grows"}>
         <legend>Forhåndsvisning</legend>
-        <SpreadsheetPreview input={parseResult} />
+        <SpreadsheetPreview
+          fields={parseResult.meta.fields || []}
+          data={parseResult.data}
+          complete={parseResult.complete}
+          rowsProcessed={parseResult.rowsProcessed}
+          rowIdPrefix={"data"}
+          rowAttributes={{onClick: (rowData: Dictionary) => highlightOffendingRow(rowData["row"])}}
+        />
       </fieldset>
 
       <fieldset className={"flex-grows"} data-testid={"region-resultat-csv"}>
@@ -267,9 +293,21 @@ function App() {
         {parseResult.unparsed && <RawPreview value={parseResult.unparsed}/>}
       </fieldset>
 
+      {parseResult.errors.length > 0 && <fieldset className={"flex-grows"}>
+        <legend>Feil</legend>
+        <SpreadsheetPreview
+          data={parseResult.errors}
+          fields={["type", "code", "message", "row"]}
+          complete={parseResult.complete}
+          rowsProcessed={parseResult.rowsProcessed}
+          rowAttributes={{onClick: (rowData: Dictionary) => highlightOffendingRow(rowData["row"])}}
+          rowIdPrefix={"error"}
+        />
+      </fieldset>}
+
       <fieldset className={"region-download"}>
         <button type={"button"} disabled={!parseResult.complete || parseResult.data.length === 0} onClick={() => downloadCsv(parseResult.unparsed!)} title={"Last ned resultat-CSV"}>Last ned resultat-CSV</button>
-        {parseResult.data.length > 0 && <div>{parseResult.data.length} rader</div>}
+        {parseResult.data.length > 0 && (<><div>{parseResult.data.length} rader</div> <div>{parseResult.meta.fields?.length} kolonner</div> <div>{parseResult.errors.length} feil</div></>)}
       </fieldset>
     </div>
   );

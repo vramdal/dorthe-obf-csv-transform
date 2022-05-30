@@ -6,17 +6,12 @@ textarea {
 
 table {
   border-collapse: collapse;
+  width: 100%;
 }
 
 th, td {
   text-align: left;
   border-bottom: 1px solid lightblue;
-}
-
-.spreadsheet-wrapper  {
-  /*max-height: 200px;*/
-  /*flex-grow: 0;*/
-  /*height: 100%;*/
 }
 
 .operation-selector-label {
@@ -73,4 +68,13 @@ body, #root {
   display: flex;
   flex-direction: row;
   justify-content: space-evenly;
+}
+
+.highlighted-error, .selected-error {
+  color: red;
+  background-color: yellow;
+}
+
+.selected-error {
+  font-weight: bold;
 }
