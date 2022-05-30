@@ -259,7 +259,16 @@ function App() {
     <div className="App">
       <fieldset data-testid={"region-Importer fil"} className={"region-import"}>
         <legend>Input-fil</legend>
-        <input type={"file"} name={"inputFile"} data-testid={"input-file-chooser"} accept={"text/csv-schema,.csv"} onChange={() => doImport().then(result => setInputCsv(result))}/>
+        <input type={"file"} name={"inputFile"} data-testid={"input-file-chooser"} accept={"text/csv-schema,.csv"}
+               onChange={() => {
+                 console.log("Valgt fil");
+                 return doImport().then(result => setInputCsv(result));
+               }}
+               onClick={(event: React.MouseEvent<HTMLInputElement>) => {
+                 event.currentTarget.value = "";
+                 setInputCsv("");
+               }}
+        />
         <br/><br/>
         <RawPreview value={inputCsv}/>
       </fieldset>
