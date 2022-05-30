@@ -126,7 +126,7 @@ function App() {
     return Papa.unparse(parseResult.data.map(dataRow => {
       const {error, row, ...realData} = dataRow;
       return realData;
-    }), {delimiter: ";", header: true, quotes: false, newline: "\r\n"});
+    }), {delimiter: ",", header: true, quotes: false, newline: "\r\n"});
   }
 
   const operationDefinitions : Array<{
