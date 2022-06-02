@@ -1,12 +1,14 @@
 locals {
   app_identifier = "dorthe-obf-csv-transform"
-  deploy_role_name = "deploy-dorthe-obf-csv-transform"
+  deploy_role_name = "dorthe-obf-csv-transform-deployer"
   tags = {
     App = "dorthe-obf-csv-transform"
   }
   website_bucket_name = "dorthe-obf.aws.vidarramdal.com"
   mime_types = jsondecode(file("./mime.json"))
   state_bucket_name = "dorthe-obf-csv-transform"
+  github_repo = "vramdal/dorthe-obf-csv-transform"
+  aws_account_id = "310400525929"
 }
 
 
@@ -23,12 +25,42 @@ provider "aws" {
   assume_role {
     # The role ARN within Account B to AssumeRole into. Created in step 1.
     # For å simulere Github Actions, kommenter dette inn
-    #role_arn    = "arn:aws:iam:::role/${local.deploy_role_name}"
+    #role_arn    = "arn:aws:iam::310400525929:role/${local.deploy_role_name}"
   }
 }
 
+resource aws_iam_role "deploy_role" {
+  name = local.deploy_role_name
+  assume_role_policy = jsonencode({
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "",
+        "Effect": "Allow",
+        "Principal": {
+          "Federated": "arn:aws:iam::${local.aws_account_id}:oidc-provider/token.actions.githubusercontent.com"
+        },
+        "Action": "sts:AssumeRoleWithWebIdentity",
+        "Condition": {
+          "StringLike": {
+            "token.actions.githubusercontent.com:sub": "repo:${local.github_repo}:*"
+          }
+        }
+      },
+      {
+        "Sid": "",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::${local.aws_account_id}:user/deploy-private-prosjekter"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
 resource aws_iam_role_policy deploy_role_policy {
-  role = local.deploy_role_name
+  role = aws_iam_role.deploy_role.name
   name = "${local.tags.App}-allow-all-access-to-app"
   policy = jsonencode(
     {
@@ -46,7 +78,15 @@ resource aws_iam_role_policy deploy_role_policy {
         },
         {
           "Effect": "Allow",
-          "Action": ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListEntitiesForPolicy", "iam:GetRolePolicy"],
+          "Action": [
+            "iam:GetPolicy",
+            "iam:GetPolicyVersion",
+            "iam:ListEntitiesForPolicy",
+            "iam:GetRolePolicy",
+            "iam:GetRole",
+            "iam:ListRolePolicies",
+            "iam:ListAttachedRolePolicies"
+          ],
           "Resource": "*"
         }
       ]
@@ -114,7 +154,7 @@ resource "aws_iam_policy" "website-bucket-role-policy" {
 resource "aws_iam_policy_attachment" "website-bucket-role-policy_attachment" {
   policy_arn = aws_iam_policy.website-bucket-role-policy.arn
   name = local.deploy_role_name
-  roles = [local.deploy_role_name]
+  roles = [aws_iam_role.deploy_role.name]
 }
 
 resource "aws_iam_policy" "state-bucket-role-policy" {

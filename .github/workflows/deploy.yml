@@ -67,7 +67,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-region: eu-central-1
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID_DEV }}:role/deploy-dorthe-obf-csv-transform
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID_DEV }}:role/dorthe-obf-csv-transform-deployer
       - name: Use Terraform github actions
         uses: hashicorp/setup-terraform@v1
         with:
