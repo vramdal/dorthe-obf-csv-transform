@@ -212,7 +212,7 @@ function App() {
             setParseResult(({...tempParseResult, complete: true, unparsed: unparse(tempParseResult)}));
             // })
           },
-          worker: true,
+          // worker: true,
           step: (stepResult: ParseStepResult<Dictionary>) => {
             const updatedParseResult = {...tempParseResult};
             if (updatedParseResult.data.length === 0) {
