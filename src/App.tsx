@@ -1,4 +1,4 @@
-import React, { ChangeEvent, MouseEventHandler, useEffect, useMemo, useState } from 'react';
+import React, { ChangeEvent, MouseEventHandler, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import Papa, { ParseError, ParseResult, ParseStepResult } from 'papaparse';
 // @ts-ignore
@@ -255,11 +255,31 @@ function App() {
     trs.forEach(tr => tr.scrollIntoView({block: "center", behavior: "auto"}));
   }
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const dragHandlers = {
+    "onDragOver": (event : React.DragEvent<HTMLInputElement>) => event.preventDefault(),
+    "onDragEnter": (event : React.DragEvent<HTMLInputElement>) => {
+      console.log("Du drar noe")
+      event.preventDefault();
+    },
+    "onDrop": (event: React.DragEvent<HTMLInputElement>) => {
+      event.preventDefault();
+      console.log("Du slapp noe");
+      const datatransfer = new DataTransfer();
+      datatransfer.items.add(event.dataTransfer!.files[0]);
+      fileInputRef.current!.files = datatransfer.files;
+      doImport().then(result => setInputCsv(result));
+
+    }
+  }
+
   return (
-    <div className="App">
+    <div className="App" {...dragHandlers}>
       <fieldset data-testid={"region-Importer fil"} className={"region-import"}>
         <legend>Input-fil</legend>
         <input type={"file"} name={"inputFile"} data-testid={"input-file-chooser"} accept={"text/csv-schema,.csv"}
+               ref={fileInputRef}
                onChange={() => {
                  console.log("Valgt fil");
                  return doImport().then(result => setInputCsv(result));
