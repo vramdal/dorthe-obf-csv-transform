@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/dorthe-obf-csv-transform/static/css/main.2054273c.css",
+    "main.js": "/dorthe-obf-csv-transform/static/js/main.a47ece0e.js",
+    "static/js/787.a922ec5d.chunk.js": "/dorthe-obf-csv-transform/static/js/787.a922ec5d.chunk.js",
+    "index.html": "/dorthe-obf-csv-transform/index.html",
+    "main.2054273c.css.map": "/dorthe-obf-csv-transform/static/css/main.2054273c.css.map",
+    "main.a47ece0e.js.map": "/dorthe-obf-csv-transform/static/js/main.a47ece0e.js.map",
+    "787.a922ec5d.chunk.js.map": "/dorthe-obf-csv-transform/static/js/787.a922ec5d.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.2054273c.css",
+    "static/js/main.a47ece0e.js"
+  ]
+}
